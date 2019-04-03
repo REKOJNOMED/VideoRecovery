@@ -1,0 +1,2 @@
+train:--model_name rcan --gpu_no 0,1,2,3 --dataset_dir test_dataset --is_train --picture_num=9840
+test:--model_name rcan --gpu_no 0,1,2,3 --video_path=dev-23.mp4 --patch_size=256 stride=50 --batch_size=32
