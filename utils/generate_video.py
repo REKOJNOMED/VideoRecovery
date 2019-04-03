@@ -1,49 +1,53 @@
 import cv2
 import numpy as np
-import math
 
 
-def psnr(img1,img2):
-	mse=np.mean((img1/255.-img2/255.)**2)
-	if mse<1e-10:
-		return 100
-	return 20 * math.log10(1/math.sqrt(mse))
+def PSNR(I, O):
+    MSE = np.mean((I-O)**2)
+    if np.max(I) <= 1:
+        I = I * 255
+    if np.max(O) <= 1:
+        O = O * 255
+    return 10 * np.log10(255**2 / MSE)
 
+def addText(images, text, region=(0, 50),font=cv2.FONT_HERSHEY_SIMPLEX, fontScale=3., color=(0,255,255), thickness=8):
+    if len(images.shape) == 4:
+        for i in range(images.shape[0]):
+            images[i] = cv2.putText(images[i], text, region, font, fontScale, color, thickness)
+    else:
+        images = cv2.putText(images, text, (0,100), font, fontScale, color, thickness)
+    return images
 
-def generate_video(videoname1,videoname2):
-	VC_n=cv2.VideoCapture(videoname1)
-	VC_g=cv2.VideoCapture(videoname2)
+def PSNR_Videos(filename, ori_path, res_path, frequency=1):
+    ori_cap = cv2.VideoCapture(ori_path)
+    res_cap = cv2.VideoCapture(res_path)
 
-	fps = VC_n.get(cv2.CAP_PROP_FPS)
-	size = (int(VC_n.get(cv2.CAP_PROP_FRAME_WIDTH))*2,
-			int(VC_n.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-
-
-	videoWriter = cv2.VideoWriter('results.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
-	success_n,frame_n=VC_n.read()
-	success_g,frame_g=VC_g.read()
-	count=0
-	color=(255,255,255)
-	pos=(150,150)
-	text_size=2
-	font = cv2.FONT_HERSHEY_SIMPLEX
-	while success_g and success_n:
-
-		# w,h=size
-		# frame=np.zeros((h,w,3),np.uint8)
-		# frame[:,0:int(w/2),:]=frame_n[:,:,:]
-		# frame[:,int(w/2):w,:]=frame_g[:,:,:]
-		frame=np.hstack((frame_n,frame_g))
-		if count%30==0:
-			txt='psnr:{:.4}'.format(psnr(frame_n,frame_g))
-		cv2.putText(frame,txt,pos,font,text_size,color,2)
-		count+=1
-		videoWriter.write(frame)
-		success_n, frame_n = VC_n.read()
-		success_g, frame_g = VC_g.read()
-	VC_g.release()
-	VC_n.release()
-	videoWriter.release()
-
-if __name__=='__main__':
-	generate_video('../dev-23.mp4','../dev-origin-23.mp4')
+    ori_fps = ori_cap.get(cv2.CAP_PROP_FPS)
+    res_fps = res_cap.get(cv2.CAP_PROP_FPS)
+    ori_size = (int(ori_cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            int(ori_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    res_size = (int(res_cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            int(res_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    assert ori_size == res_size
+    ori_fnums = int(ori_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    res_fnums = int(res_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    assert ori_fnums == res_fnums
+    print('ori: fps=%3f, size=(%d, %d), FNUMS=%d' %(ori_fps, ori_size[0], ori_size[1], ori_fnums))
+    print('res: fps=%3f, size=(%d, %d), FNUMS=%d' %(res_fps, res_size[0], res_size[1], res_fnums))
+    success, ori_frame = ori_cap.read()
+    assert success
+    success, res_frame = res_cap.read()
+    assert success
+    
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(filename, fourcc, ori_fps, (ori_size[0]*2, ori_size[1]))
+    while success:
+        frame = np.hstack((res_frame, ori_frame))
+        img = addText(frame, 'psnr=%5f' % PSNR(res_frame, ori_frame))
+        out.write(img)
+        success, ori_frame = ori_cap.read()
+        success, res_frame = res_cap.read()
+    ori_cap.release()
+    res_cap.release()
+    out.release()
+    cv2.destroyAllWindows()
