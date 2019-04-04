@@ -1,5 +1,6 @@
 import torch
 import pytorch_ssim
+from tensorboardX import SummaryWriter
 from utils.dataset import *
 from torch.utils.data import DataLoader
 import torch.nn as nn
@@ -7,16 +8,41 @@ import torch.optim as optim
 import numpy as np
 from utils import util
 import models
+import json
 from models.rcan.model import RCAN
 from models.yair.model import CNN
 import cv2
+
+
+def load_losses(writer, path='./test.json'):
+    f = open(path, 'r')
+    a = json.load(f)
+    losses = []
+    for k in a.keys():
+        if k.endswith('loss'):
+            losses = a[k]
+    losses = [i for i in a.values()]
+    load_it = len(losses)
+    for i in range(load_it):
+        writer.add_scalar('data/loss', losses[i][2], losses[i][1])
+        writer.add_scalars('data/scalar_group', {'loss' : losses[i][2]}, losses[i][2])
+    
+    return load_it
+    
+
+
 def train(model, params):
     optimizer = optim.Adam(model.parameters(), lr=params['train_params']['learning_rate'])
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=params['train_params']['decay_step_size'],
                                           gamma=params['train_params']['decay_rate'])
     start_eph=0
+
+    saved_checkpoints_dir = 'checkpoints/' + params['model_name']
+    writer = SummaryWriter(saved_checkpoints_dir + '/runs/')
+    load_it = 0
     if params['train_params']['continue_train']:
         checkpoint=torch.load('checkpoints/'+params['model_name']+'/checkpoint')
+        load_it = load_losses(writer)
         model.load_state_dict(torch.load(checkpoint['net'],map_location=params['device']))
         optimizer.load_state_dict(checkpoint['optimizer'])
         start_eph=checkpoint['epoch']
@@ -32,7 +58,6 @@ def train(model, params):
 
 
     total_itnm = np.ceil(len(dataset) / params['batch_size'])
-    saved_checkpoints_dir = 'checkpoints/' + params['model_name']
     util.mkdir(saved_checkpoints_dir)
 
     for eph in range(params['train_params']['epoch']):
@@ -42,6 +67,8 @@ def train(model, params):
             gen = model(tw)
 
             loss = loss_f(gen, gt)
+            writer.add_scalar('data/loss',loss.item(), eph * total_itnm + itnm + load_it)
+            writer.add_scalars('data/scalar_group', {'loss' :loss.item()}, eph * total_itnm + itnm + load_it)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -55,7 +82,8 @@ def train(model, params):
 
         if (eph + 1) % 5 == 0:
             torch.save(model.state_dict(), saved_checkpoints_dir + '/{}_{:.4}'.format(eph+1+start_eph,loss))
-
+    writer.export_scalars_to_json("./test.json")
+    writer.close()
 
 
 
